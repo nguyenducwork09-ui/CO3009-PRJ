@@ -28,4 +28,11 @@ void fsm_automatic_start(void);
  */
 void fsm_automatic_end(void);
 
+/**
+ * @brief  Lấy số giây đếm lùi còn lại của một tuyến (dùng cho task LCD)
+ * @param  road: Tuyến đường (ROAD_1 hoặc ROAD_2)
+ * @retval Số giây còn lại
+ */
+uint16_t fsm_automatic_get_countdown(uint8_t road);
+
 #endif /* INC_FSM_AUTOMATIC_H_ */

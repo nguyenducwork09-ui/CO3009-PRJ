@@ -27,4 +27,10 @@ void fsm_manual_start(void);
  */
 void fsm_manual_end(void);
 
+/**
+ * @brief  Lấy trạng thái hiện tại của chế độ bằng tay (dùng cho task LCD)
+ * @retval Trạng thái manual
+ */
+ManualState_t fsm_manual_get_state(void);
+
 #endif /* INC_FSM_MANUAL_H_ */
