@@ -8,7 +8,8 @@
 typedef enum {
     MANUAL_INIT = 0,
     MANUAL_RED1_GREEN2,
-    MANUAL_GREEN1_RED2
+    MANUAL_GREEN1_RED2,
+    MANUAL_AMBER1_AMBER2
 } ManualState_t;
 
 /**
@@ -17,8 +18,13 @@ typedef enum {
 void fsm_manual_init(void);
 
 /**
- * @brief  Thực thi xử lý chuyển trạng thái đèn theo nút bấm thủ công
+ * @brief  Vào chế độ bằng tay: add các task của chế độ vào scheduler (chỉ gọi 1 lần)
  */
-void fsm_manual_run(void);
+void fsm_manual_start(void);
+
+/**
+ * @brief  Thoát chế độ bằng tay: xóa các task của chế độ khỏi scheduler
+ */
+void fsm_manual_end(void);
 
 #endif /* INC_FSM_MANUAL_H_ */

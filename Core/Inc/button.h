@@ -28,4 +28,53 @@ uint8_t isButtonPressed(uint8_t index);
  */
 uint8_t isButtonPressed1s(uint8_t index);
 
+/* ===== Skeleton cho các fsm (driver cần hiện thực) =====
+ * Quy ước chung cho các hàm btn_x():
+ *   - Nút: 1 đầu nối GND, 1 đầu nối GPIO (Input, internal Pull-up) -> nhấn = mức 0
+ *   - Được fsm gọi mỗi 10ms, driver tự đọc chân + chống dội
+ *   - Trả về 1 đúng 1 lần tại cạnh nhấn (nhả -> nhấn), còn lại trả về 0
+ */
+
+/**
+ * @brief  Poll nút Đỏ (chế độ Manual)
+ * @retval 1 nếu nút vừa được nhấn, 0 nếu không
+ */
+uint8_t btn_red(void);
+
+/**
+ * @brief  Poll nút Vàng (chế độ Manual)
+ * @retval 1 nếu nút vừa được nhấn, 0 nếu không
+ */
+uint8_t btn_yellow(void);
+
+/**
+ * @brief  Poll nút Xanh (chế độ Manual)
+ * @retval 1 nếu nút vừa được nhấn, 0 nếu không
+ */
+uint8_t btn_green(void);
+
+/**
+ * @brief  Poll nút Up - tăng giá trị (chế độ Tuning)
+ * @retval 1 nếu nút vừa được nhấn, 0 nếu không
+ */
+uint8_t btn_up(void);
+
+/**
+ * @brief  Poll nút Down - giảm giá trị (chế độ Tuning)
+ * @retval 1 nếu nút vừa được nhấn, 0 nếu không
+ */
+uint8_t btn_down(void);
+
+/**
+ * @brief  Poll nút Set - lưu giá trị (chế độ Tuning)
+ * @retval 1 nếu nút vừa được nhấn, 0 nếu không
+ */
+uint8_t btn_set(void);
+
+/**
+ * @brief  Poll nút Mode - đổi chế độ AUTO -> MANUAL -> TUNING
+ * @retval 1 nếu nút vừa được nhấn, 0 nếu không
+ */
+uint8_t btn_mode(void);
+
 #endif /* INC_BUTTON_H_ */

@@ -19,8 +19,13 @@ typedef enum {
 void fsm_automatic_init(void);
 
 /**
- * @brief  Thực thi chu trình máy trạng thái tự động (chạy định kỳ như 1 task trong scheduler)
+ * @brief  Vào chế độ tự động: add các task của chế độ vào scheduler (chỉ gọi 1 lần)
  */
-void fsm_automatic_run(void);
+void fsm_automatic_start(void);
+
+/**
+ * @brief  Thoát chế độ tự động: xóa các task của chế độ khỏi scheduler
+ */
+void fsm_automatic_end(void);
 
 #endif /* INC_FSM_AUTOMATIC_H_ */
