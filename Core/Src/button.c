@@ -1,36 +1,5 @@
 #include "button.h"
-
-#if __has_include("main.h")
 #include "main.h"
-#elif __has_include("stm32f1xx_hal.h")
-#include "stm32f1xx_hal.h"
-#endif
-
-/* Fallback cấu hình chân GPIO nếu chưa sinh mã từ CubeIDE .ioc */
-#ifndef BTN_1_Pin
-#define BTN_1_Pin               GPIO_PIN_8
-#define BTN_1_GPIO_Port         GPIOA
-#endif
-
-#ifndef BTN_2_Pin
-#define BTN_2_Pin               GPIO_PIN_10
-#define BTN_2_GPIO_Port         GPIOB
-#endif
-
-#ifndef BTN_3_Pin
-#define BTN_3_Pin               GPIO_PIN_4
-#define BTN_3_GPIO_Port         GPIOB
-#endif
-
-#ifndef BTN_4_Pin
-#define BTN_4_Pin               GPIO_PIN_6
-#define BTN_4_GPIO_Port         GPIOB
-#endif
-
-#ifndef BTN_USER_Pin
-#define BTN_USER_Pin            GPIO_PIN_13
-#define BTN_USER_GPIO_Port      GPIOC
-#endif
 
 /* Bộ đệm chống dội 3 mẫu liên tiếp cho từng nút (1: nhả, 0: nhấn) */
 static uint8_t debounce_buf0[NUM_BUTTONS] = {1, 1, 1, 1, 1};
@@ -47,7 +16,6 @@ static uint16_t counter_long_press[NUM_BUTTONS]      = {0, 0, 0, 0, 0};
  */
 static uint8_t read_button_pin(uint8_t index)
 {
-#if defined(GPIO_PIN_RESET)
     switch (index) {
     case BTN_1:
         return (HAL_GPIO_ReadPin(BTN_1_GPIO_Port, BTN_1_Pin) == GPIO_PIN_RESET) ? 0 : 1;
@@ -58,14 +26,14 @@ static uint8_t read_button_pin(uint8_t index)
     case BTN_4:
         return (HAL_GPIO_ReadPin(BTN_4_GPIO_Port, BTN_4_Pin) == GPIO_PIN_RESET) ? 0 : 1;
     case BTN_USER:
+#if defined(BTN_USER_Pin)
         return (HAL_GPIO_ReadPin(BTN_USER_GPIO_Port, BTN_USER_Pin) == GPIO_PIN_RESET) ? 0 : 1;
+#else
+        return (HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_13) == GPIO_PIN_RESET) ? 0 : 1;
+#endif
     default:
         return 1;
     }
-#else
-    (void)index;
-    return 1;
-#endif
 }
 
 /**
@@ -150,28 +118,18 @@ uint8_t isButtonPressed1s(uint8_t index)
 
 /* ===== Hiện thực các hàm btn_x() cho FSM ===== */
 
+/* Nút Mode: dùng BTN_1 (PA8) */
 uint8_t btn_mode(void)
 {
     process_single_button(BTN_1);
     return isButtonPressed(BTN_1);
 }
 
+/* Nút Red (Manual) / Up (Tuning): dùng chung nút vật lý BTN_2 (PA9) */
 uint8_t btn_red(void)
 {
     process_single_button(BTN_2);
     return isButtonPressed(BTN_2);
-}
-
-uint8_t btn_yellow(void)
-{
-    process_single_button(BTN_3);
-    return isButtonPressed(BTN_3);
-}
-
-uint8_t btn_green(void)
-{
-    process_single_button(BTN_4);
-    return isButtonPressed(BTN_4);
 }
 
 uint8_t btn_up(void)
@@ -180,10 +138,24 @@ uint8_t btn_up(void)
     return isButtonPressed(BTN_2);
 }
 
+/* Nút Yellow (Manual) / Down (Tuning): dùng chung nút vật lý BTN_3 (PC7) */
+uint8_t btn_yellow(void)
+{
+    process_single_button(BTN_3);
+    return isButtonPressed(BTN_3);
+}
+
 uint8_t btn_down(void)
 {
     process_single_button(BTN_3);
     return isButtonPressed(BTN_3);
+}
+
+/* Nút Green (Manual) / Set (Tuning): dùng chung nút vật lý BTN_4 (PB6) */
+uint8_t btn_green(void)
+{
+    process_single_button(BTN_4);
+    return isButtonPressed(BTN_4);
 }
 
 uint8_t btn_set(void)
