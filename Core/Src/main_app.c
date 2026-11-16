@@ -10,7 +10,7 @@
 #include <stdio.h>
 
 /*
- * Ứng dụng chính: khởi chạy các task + giữ cờ chế độ.
+ * Ứng dụng chính: khởi chạy các task + cập nhật cờ chế độ (mode_flag ở global.h).
  *
  * 6 task chạy suốt chương trình (add 1 lần trong main_app_init, không bao giờ xóa):
  *   Button_Reading    (10ms) : polling nút - driver đọc chân + chống dội + bật cờ
@@ -28,15 +28,7 @@
 /* ===== Quy đổi thời gian -> tick ===== */
 #define MS(x)           ((x) / SCH_TICK_MS)
 
-#define NUM_MODES       3   /* MODE_AUTO = 0, MODE_MANUAL = 1, MODE_TUNING = 2 */
-
-/* ===== Cờ chế độ (chỉ Button_Logic ghi, các fsm đọc qua main_app_get_mode) ===== */
-static uint8_t mode_flag = MODE_AUTO;
-
-SystemMode_t main_app_get_mode(void)
-{
-    return (SystemMode_t)mode_flag;
-}
+/* Cờ chế độ mode_flag (global.h): chỉ Button_Logic ghi, các fsm đọc trực tiếp */
 
 /* Đọc bỏ cờ nút còn sót từ chế độ cũ, tránh chế độ mới hiểu nhầm là vừa nhấn */
 static void flush_button_flags(void)
@@ -56,7 +48,7 @@ void Button_Reading(void)
 void Button_Logic(void)
 {
     if (isButtonPressed(BTN_USER)) {
-        mode_flag = (mode_flag + 1) % NUM_MODES;
+        mode_flag = (SystemMode_t)((mode_flag + 1) % NUM_MODES);
         flush_button_flags();
     }
 }
@@ -68,7 +60,7 @@ void LCD_Display(void)
     char line0[17];
     char line1[17];
 
-    switch (main_app_get_mode()) {
+    switch (mode_flag) {
     case MODE_AUTO:
         snprintf(line0, sizeof(line0), "AUTO R1:%2u R2:%2u",
                  fsm_automatic_get_countdown(ROAD_1),
@@ -79,7 +71,9 @@ void LCD_Display(void)
         const char *s;
         switch (fsm_manual_get_state()) {
         case MANUAL_RED1_GREEN2:   s = "1:R 2:G"; break;
+        case MANUAL_RED1_AMBER2:   s = "1:R 2:A"; break;
         case MANUAL_GREEN1_RED2:   s = "1:G 2:R"; break;
+        case MANUAL_AMBER1_RED2:   s = "1:A 2:R"; break;
         case MANUAL_AMBER1_AMBER2: s = "1:A 2:A"; break;
         default:                   s = "1:- 2:-"; break;
         }
@@ -141,7 +135,8 @@ void main_app_init(void)
     traffic_init();
     lcd_init();
 
-    mode_flag = MODE_AUTO;
+    mode_flag     = MODE_AUTO;
+    traffic_phase = PHASE_OFF;
 
     add(&task_Button_Reading);
     add(&task_Button_Logic);

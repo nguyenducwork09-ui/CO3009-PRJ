@@ -1,6 +1,5 @@
 //#include "fsm_tuning.h"
 #include "../Inc/fsm_tuning.h"
-#include "../Inc/main_app.h"
 #include "../Inc/software_timer.h"
 #include "../Inc/traffic_light.h"
 #include "../Inc/button.h"
@@ -101,7 +100,7 @@ static void tuning_blink(void)
 void fsm_tuning_run(void)
 {
     /* Không phải lượt của mình: reset để lần vào sau khởi động lại từ đầu */
-    if (main_app_get_mode() != MODE_TUNING) {
+    if (mode_flag != MODE_TUNING) {
         tuning_state = TUNING_INIT;
         return;
     }
@@ -112,6 +111,7 @@ void fsm_tuning_run(void)
         tuning_load();
         blink_on = 0;
         traffic_turn_off_all();
+        traffic_phase = PHASE_OFF;          /* đèn đang chớp, không thuộc pha giao thông nào */
         setTimer(TIMER_TUNING_BLINK, BLINK_MS);
         return;
     }

@@ -1,12 +1,12 @@
 // #include "fsm_automatic.h"
 #include "../Inc/fsm_automatic.h"
-#include "../Inc/main_app.h"
 #include "../Inc/software_timer.h"
 #include "../Inc/traffic_light.h"
 
 /*
  * Chế độ tự động: 1 task duy nhất fsm_automatic_run() (10ms, chạy suốt chương trình)
- *   - Không phải lượt của mình (cờ != MODE_AUTO): về AUTO_INIT rồi thoát
+ *   - Không phải lượt của mình (mode_flag != MODE_AUTO): về AUTO_INIT rồi thoát
+ *   - Mỗi lần đổi pha ghi traffic_phase (global) để chế độ bằng tay kế thừa đèn hiện tại
  *   - Đúng lượt: chạy máy trạng thái 4 pha
  *       RED1_GREEN2 (time_green) -> RED1_AMBER2 (time_amber)
  *    -> GREEN1_RED2 (time_green) -> AMBER1_RED2 (time_amber) -> lặp lại
@@ -33,11 +33,13 @@ static void auto_enter(AutoState_t next)
         road1_counter = time_red;
         road2_counter = time_green;
         phase_time    = time_green;
+        traffic_phase = PHASE_RED1_GREEN2;
         break;
     case AUTO_RED1_AMBER2:
         traffic_set(ROAD_2, LIGHT_AMBER);       /* tuyến 1 vẫn đỏ, giữ bộ đếm */
         road2_counter = time_amber;
         phase_time    = time_amber;
+        traffic_phase = PHASE_RED1_AMBER2;
         break;
     case AUTO_GREEN1_RED2:
         traffic_set(ROAD_1, LIGHT_GREEN);
@@ -45,11 +47,13 @@ static void auto_enter(AutoState_t next)
         road1_counter = time_green;
         road2_counter = time_red;
         phase_time    = time_green;
+        traffic_phase = PHASE_GREEN1_RED2;
         break;
     case AUTO_AMBER1_RED2:
         traffic_set(ROAD_1, LIGHT_AMBER);       /* tuyến 2 vẫn đỏ, giữ bộ đếm */
         road1_counter = time_amber;
         phase_time    = time_amber;
+        traffic_phase = PHASE_AMBER1_RED2;
         break;
     case AUTO_INIT:
     default:
@@ -65,7 +69,7 @@ static void auto_enter(AutoState_t next)
 void fsm_automatic_run(void)
 {
     /* Không phải lượt của mình: reset để lần vào sau khởi động lại từ đầu */
-    if (main_app_get_mode() != MODE_AUTO) {
+    if (mode_flag != MODE_AUTO) {
         auto_state = AUTO_INIT;
         return;
     }
