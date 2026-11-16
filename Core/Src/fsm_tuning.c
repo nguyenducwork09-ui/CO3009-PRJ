@@ -1,31 +1,30 @@
 //#include "fsm_tuning.h"
 #include "../Inc/fsm_tuning.h"
-#include "../Inc/scheduler.h"
+#include "../Inc/main_app.h"
+#include "../Inc/software_timer.h"
 #include "../Inc/traffic_light.h"
 #include "../Inc/button.h"
 
 /*
- * Chế độ chỉnh thời gian: 2 task
- *   - Tuning_Button_Handler (10ms): đọc cờ nút từ driver
+ * Chế độ chỉnh thời gian: 1 task duy nhất fsm_tuning_run() (10ms, chạy suốt chương trình)
+ *   - Không phải lượt của mình (cờ != MODE_TUNING): về TUNING_INIT rồi thoát
+ *   - Đúng lượt:
  *       BTN_1 (Up)  : tăng giá trị thời gian của đèn đang chỉnh
  *       BTN_2 (Down): giảm giá trị
  *       BTN_3 (Set) : lưu giá trị rồi chuyển sang đèn kế tiếp (RED -> AMBER -> GREEN -> RED)
- *   - Tuning_Blink (500ms): chớp đèn đang chỉnh ở cả 2 tuyến
- * Không ghi LCD: task LCD trong fsm_mode đọc qua fsm_tuning_get_state()/get_value().
+ *       TIMER_TUNING_BLINK hết hạn (500ms): đảo trạng thái chớp đèn đang chỉnh ở cả 2 tuyến
+ * Không ghi LCD: task LCD trong main_app đọc qua fsm_tuning_get_state()/get_value().
  *
  * Ràng buộc để 2 tuyến đồng bộ ở chế độ tự động: time_red = time_green + time_amber
  *   - Lưu RED         -> tính lại time_green = time_red - time_amber
  *   - Lưu AMBER/GREEN -> tính lại time_red  = time_green + time_amber
  */
 
-/* ===== Quy đổi thời gian -> tick (1 tick = 10ms) ===== */
-#define TICK_MS         10
-#define MS(x)           ((x) / TICK_MS)
-
 #define TIME_MAX        99      /* giây, vừa 2 chữ số */
+#define BLINK_MS        500
 
 /* ===== Trạng thái tuning ===== */
-static TuningState_t tuning_state = TUNING_RED;
+static TuningState_t tuning_state = TUNING_INIT;
 static uint16_t      tuning_value = DEFAULT_TIME_RED;   /* giá trị đang chỉnh (chưa lưu) */
 static uint8_t       blink_on     = 0;
 
@@ -77,25 +76,8 @@ static void tuning_save_and_next(void)
     tuning_load();
 }
 
-/* ===== Task functions ===== */
-void Tuning_Button_Handler(void)
-{
-    uint16_t min, max;
-    tuning_limits(&min, &max);
-
-    if (isButtonPressed(BTN_1)) {           /* Up: vượt max thì quay về min */
-        tuning_value = (tuning_value >= max) ? min : tuning_value + 1;
-    }
-    if (isButtonPressed(BTN_2)) {           /* Down: nhỏ hơn min thì quay về max */
-        tuning_value = (tuning_value <= min) ? max : tuning_value - 1;
-    }
-    if (isButtonPressed(BTN_3)) {           /* Set */
-        tuning_save_and_next();
-    }
-}
-
-/* Chớp đèn đang chỉnh: 500ms sáng / 500ms tắt */
-void Tuning_Blink(void)
+/* Chớp đèn đang chỉnh: đảo sáng/tắt mỗi lần gọi */
+static void tuning_blink(void)
 {
     LightColor_t color;
 
@@ -115,27 +97,44 @@ void Tuning_Blink(void)
     }
 }
 
-/* ===== sTask control ===== */
-/*                                   pTask                  Delay  Period   */
-sTask task_Tuning_Button_Handler = { Tuning_Button_Handler, 0,     MS(10)  };
-sTask task_Tuning_Blink          = { Tuning_Blink,          0,     MS(500) };
+/* ===== Task function ===== */
+void fsm_tuning_run(void)
+{
+    /* Không phải lượt của mình: reset để lần vào sau khởi động lại từ đầu */
+    if (main_app_get_mode() != MODE_TUNING) {
+        tuning_state = TUNING_INIT;
+        return;
+    }
 
-void fsm_tuning_start(void){
-    tuning_state = TUNING_RED;
-    tuning_load();
-    blink_on = 0;
+    /* Vừa vào chế độ: bắt đầu chỉnh đèn đỏ, tắt đèn, chạy timer chớp */
+    if (tuning_state == TUNING_INIT) {
+        tuning_state = TUNING_RED;
+        tuning_load();
+        blink_on = 0;
+        traffic_turn_off_all();
+        setTimer(TIMER_TUNING_BLINK, BLINK_MS);
+        return;
+    }
 
-    task_Tuning_Button_Handler.TaskID = SCH_Add_Task(task_Tuning_Button_Handler.pTask,
-                                                     task_Tuning_Button_Handler.Delay,
-                                                     task_Tuning_Button_Handler.Period);
-    task_Tuning_Blink.TaskID          = SCH_Add_Task(task_Tuning_Blink.pTask,
-                                                     task_Tuning_Blink.Delay,
-                                                     task_Tuning_Blink.Period);
-}
+    /* Xử lý nút */
+    uint16_t min, max;
+    tuning_limits(&min, &max);
 
-void fsm_tuning_end(void){
-    SCH_Delete_Task(task_Tuning_Button_Handler.TaskID);
-    SCH_Delete_Task(task_Tuning_Blink.TaskID);
+    if (isButtonPressed(BTN_1)) {           /* Up: vượt max thì quay về min */
+        tuning_value = (tuning_value >= max) ? min : tuning_value + 1;
+    }
+    if (isButtonPressed(BTN_2)) {           /* Down: nhỏ hơn min thì quay về max */
+        tuning_value = (tuning_value <= min) ? max : tuning_value - 1;
+    }
+    if (isButtonPressed(BTN_3)) {           /* Set */
+        tuning_save_and_next();
+    }
+
+    /* Chớp đèn theo software timer */
+    if (isTimerExpired(TIMER_TUNING_BLINK)) {
+        tuning_blink();
+        setTimer(TIMER_TUNING_BLINK, BLINK_MS);
+    }
 }
 
 TuningState_t fsm_tuning_get_state(void){

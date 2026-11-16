@@ -1,5 +1,5 @@
-//#include "fsm_mode.h"
-#include "../Inc/fsm_mode.h"
+//#include "main_app.h"
+#include "../Inc/main_app.h"
 #include "../Inc/scheduler.h"
 #include "../Inc/button.h"
 #include "../Inc/traffic_light.h"
@@ -10,39 +10,32 @@
 #include <stdio.h>
 
 /*
- * File tổng:
- *   - 3 task chạy suốt chương trình (add 1 lần trong fsm_init, không bao giờ xóa):
- *       Button_Reading (10ms) : driver đọc nút + chống dội + bật cờ
- *       Mode_Handler   (10ms) : nhấn BTN_USER -> AUTO -> MANUAL -> TUNING -> AUTO
- *       LCD_Display    (250ms): nơi DUY NHẤT ghi LCD, vẽ theo current_mode
- *   - Đổi fsm = fsm_<cũ>_end() (xóa task) + fsm_<mới>_start() (add task)
+ * Ứng dụng chính: khởi chạy các task + giữ cờ chế độ.
  *
- * Số task tối đa: 3 (chạy suốt) + 7 (AUTO) = 10 = SCH_MAX_TASKS
+ * 6 task chạy suốt chương trình (add 1 lần trong main_app_init, không bao giờ xóa):
+ *   Button_Reading    (10ms) : polling nút - driver đọc chân + chống dội + bật cờ
+ *   Button_Logic      (10ms) : nhấn nút Mode -> mode_flag = (mode_flag + 1) % 3
+ *                              0 (AUTO) -> 1 (MANUAL) -> 2 (TUNING) -> 0 ...
+ *   fsm_automatic_run (10ms) : tự polling cờ, == MODE_AUTO   thì chạy, không thì bỏ qua
+ *   fsm_manual_run    (10ms) : tự polling cờ, == MODE_MANUAL thì chạy, không thì bỏ qua
+ *   fsm_tuning_run    (10ms) : tự polling cờ, == MODE_TUNING thì chạy, không thì bỏ qua
+ *   LCD_Display      (250ms) : nơi DUY NHẤT ghi LCD, vẽ theo cờ
+ *
+ * Không có task quản lý: việc mode nào được chạy do 3 fsm tự quyết khi polling cờ.
+ * Thứ tự add = thứ tự chạy trong cùng 1 tick: đọc nút -> logic nút -> 3 fsm -> LCD
  */
 
-/* ===== Quy đổi thời gian -> tick (1 tick = 10ms) ===== */
-#define TICK_MS         10
-#define MS(x)           ((x) / TICK_MS)
+/* ===== Quy đổi thời gian -> tick ===== */
+#define MS(x)           ((x) / SCH_TICK_MS)
 
-/* ===== Gọi start / end theo chế độ ===== */
-static void mode_start(SystemMode_t mode)
-{
-    switch (mode) {
-    case MODE_AUTO:   fsm_automatic_start(); break;
-    case MODE_MANUAL: fsm_manual_start();    break;
-    case MODE_TUNING: fsm_tuning_start();    break;
-    default:          break;
-    }
-}
+#define NUM_MODES       3   /* MODE_AUTO = 0, MODE_MANUAL = 1, MODE_TUNING = 2 */
 
-static void mode_end(SystemMode_t mode)
+/* ===== Cờ chế độ (chỉ Button_Logic ghi, các fsm đọc qua main_app_get_mode) ===== */
+static uint8_t mode_flag = MODE_AUTO;
+
+SystemMode_t main_app_get_mode(void)
 {
-    switch (mode) {
-    case MODE_AUTO:   fsm_automatic_end(); break;
-    case MODE_MANUAL: fsm_manual_end();    break;
-    case MODE_TUNING: fsm_tuning_end();    break;
-    default:          break;
-    }
+    return (SystemMode_t)mode_flag;
 }
 
 /* Đọc bỏ cờ nút còn sót từ chế độ cũ, tránh chế độ mới hiểu nhầm là vừa nhấn */
@@ -54,31 +47,17 @@ static void flush_button_flags(void)
     (void)isButtonPressed(BTN_4);
 }
 
-void fsm_mode_switch(SystemMode_t new_mode)
-{
-    if (new_mode == current_mode) return;
-
-    mode_end(current_mode);
-    flush_button_flags();
-    current_mode = new_mode;
-    mode_start(current_mode);
-}
-
 /* ===== Task functions ===== */
 void Button_Reading(void)
 {
     button_reading();
 }
 
-void Mode_Handler(void)
+void Button_Logic(void)
 {
     if (isButtonPressed(BTN_USER)) {
-        switch (current_mode) {
-        case MODE_AUTO:   fsm_mode_switch(MODE_MANUAL); break;
-        case MODE_MANUAL: fsm_mode_switch(MODE_TUNING); break;
-        case MODE_TUNING: fsm_mode_switch(MODE_AUTO);   break;
-        default:          fsm_mode_switch(MODE_AUTO);   break;
-        }
+        mode_flag = (mode_flag + 1) % NUM_MODES;
+        flush_button_flags();
     }
 }
 
@@ -89,7 +68,7 @@ void LCD_Display(void)
     char line0[17];
     char line1[17];
 
-    switch (current_mode) {
+    switch (main_app_get_mode()) {
     case MODE_AUTO:
         snprintf(line0, sizeof(line0), "AUTO R1:%2u R2:%2u",
                  fsm_automatic_get_countdown(ROAD_1),
@@ -143,23 +122,31 @@ void LCD_Display(void)
 }
 
 /* ===== sTask control ===== */
-/*                             pTask           Delay  Period   */
-sTask task_Button_Reading = { Button_Reading, 0,     MS(10)  };
-sTask task_Mode_Handler   = { Mode_Handler,   0,     MS(10)  };
-sTask task_LCD_Display    = { LCD_Display,    0,     MS(250) };
+sTask task_Button_Reading    = { .pTask = Button_Reading   , .Delay = 0, .Period = MS(10) };
+sTask task_Button_Logic      = { .pTask = Button_Logic     , .Delay = 0, .Period = MS(10) };
+sTask task_FSM_Automatic     = { .pTask = fsm_automatic_run, .Delay = 0, .Period = MS(10) };
+sTask task_FSM_Manual        = { .pTask = fsm_manual_run   , .Delay = 0, .Period = MS(10) };
+sTask task_FSM_Tuning        = { .pTask = fsm_tuning_run   , .Delay = 0, .Period = MS(10) };
+sTask task_LCD_Display       = { .pTask = LCD_Display      , .Delay = 0, .Period = MS(250) };
 
-void fsm_init(void)
+static void add(sTask *t)
+{
+    t->TaskID = SCH_Add_Task(t->pTask, t->Delay, t->Period);
+}
+
+void main_app_init(void)
 {
     SCH_Init();
     button_init();
     traffic_init();
     lcd_init();
 
-    /* Thứ tự add: đọc nút trước, xử lý nút sau, LCD cuối */
-    task_Button_Reading.TaskID = SCH_Add_Task(task_Button_Reading.pTask, task_Button_Reading.Delay, task_Button_Reading.Period);
-    task_Mode_Handler.TaskID   = SCH_Add_Task(task_Mode_Handler.pTask,   task_Mode_Handler.Delay,   task_Mode_Handler.Period);
-    task_LCD_Display.TaskID    = SCH_Add_Task(task_LCD_Display.pTask,    task_LCD_Display.Delay,    task_LCD_Display.Period);
+    mode_flag = MODE_AUTO;
 
-    current_mode = MODE_AUTO;
-    mode_start(current_mode);
+    add(&task_Button_Reading);
+    add(&task_Button_Logic);
+    add(&task_FSM_Automatic);
+    add(&task_FSM_Manual);
+    add(&task_FSM_Tuning);
+    add(&task_LCD_Display);
 }

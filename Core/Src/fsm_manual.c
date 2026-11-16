@@ -1,27 +1,28 @@
 //#include "fsm_manual.h"
 #include "../Inc/fsm_manual.h"
-#include "../Inc/scheduler.h"
+#include "../Inc/main_app.h"
 #include "../Inc/traffic_light.h"
 #include "../Inc/button.h"
 
 /*
- * Chế độ bằng tay: 1 task xử lý nút (đọc cờ từ driver, chạy mỗi 10ms)
- *   BTN_1 (Đỏ) : Đỏ tuyến 1 - Xanh tuyến 2
- *   BTN_2 (Vàng): Vàng cả 2 tuyến
- *   BTN_3 (Xanh): Xanh tuyến 1 - Đỏ tuyến 2
- * Việc đọc nút + chống dội do task button_reading (fsm_mode) lo.
+ * Chế độ bằng tay: 1 task duy nhất fsm_manual_run() (10ms, chạy suốt chương trình)
+ *   - Không phải lượt của mình (cờ != MODE_MANUAL): về MANUAL_INIT rồi thoát
+ *   - Đúng lượt: đọc cờ nút từ driver
+ *       BTN_1 (Đỏ) : Đỏ tuyến 1 - Xanh tuyến 2
+ *       BTN_2 (Vàng): Vàng cả 2 tuyến
+ *       BTN_3 (Xanh): Xanh tuyến 1 - Đỏ tuyến 2
+ * Việc đọc nút + chống dội do task Button_Reading (main_app) lo.
+ * Chế độ này chỉ phản ứng theo nút, không cần software timer.
  */
 
-/* ===== Quy đổi thời gian -> tick (1 tick = 10ms) ===== */
-#define TICK_MS         10
-#define MS(x)           ((x) / TICK_MS)
-
 /* ===== Trạng thái manual ===== */
-static ManualState_t manual_state = MANUAL_RED1_GREEN2;
+static ManualState_t manual_state = MANUAL_INIT;
 
-/* Xuất trạng thái ra 2 cụm đèn */
-static void manual_apply(void)
+/* Chuyển trạng thái + xuất ra 2 cụm đèn */
+static void manual_enter(ManualState_t next)
 {
+    manual_state = next;
+
     switch (manual_state) {
     case MANUAL_RED1_GREEN2:
         traffic_set(ROAD_1, LIGHT_RED);
@@ -43,37 +44,22 @@ static void manual_apply(void)
 }
 
 /* ===== Task function ===== */
-void Manual_Button_Handler(void)
+void fsm_manual_run(void)
 {
-    if (isButtonPressed(BTN_1)) {
-        manual_state = MANUAL_RED1_GREEN2;
-        manual_apply();
+    /* Không phải lượt của mình: reset để lần vào sau khởi động lại từ đầu */
+    if (main_app_get_mode() != MODE_MANUAL) {
+        manual_state = MANUAL_INIT;
+        return;
     }
-    if (isButtonPressed(BTN_2)) {
-        manual_state = MANUAL_AMBER1_AMBER2;
-        manual_apply();
+
+    if (manual_state == MANUAL_INIT) {
+        manual_enter(MANUAL_RED1_GREEN2);
+        return;
     }
-    if (isButtonPressed(BTN_3)) {
-        manual_state = MANUAL_GREEN1_RED2;
-        manual_apply();
-    }
-}
 
-/* ===== sTask control ===== */
-/*                                   pTask                  Delay  Period  */
-sTask task_Manual_Button_Handler = { Manual_Button_Handler, 0,     MS(10) };
-
-void fsm_manual_start(void){
-    manual_state = MANUAL_RED1_GREEN2;
-    manual_apply();
-
-    task_Manual_Button_Handler.TaskID = SCH_Add_Task(task_Manual_Button_Handler.pTask,
-                                                     task_Manual_Button_Handler.Delay,
-                                                     task_Manual_Button_Handler.Period);
-}
-
-void fsm_manual_end(void){
-    SCH_Delete_Task(task_Manual_Button_Handler.TaskID);
+    if (isButtonPressed(BTN_1)) manual_enter(MANUAL_RED1_GREEN2);
+    if (isButtonPressed(BTN_2)) manual_enter(MANUAL_AMBER1_AMBER2);
+    if (isButtonPressed(BTN_3)) manual_enter(MANUAL_GREEN1_RED2);
 }
 
 ManualState_t fsm_manual_get_state(void){

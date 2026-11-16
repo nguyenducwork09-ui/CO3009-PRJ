@@ -13,19 +13,11 @@ typedef enum {
 } TuningState_t;
 
 /**
- * @brief  Khởi tạo máy trạng thái chỉnh thời gian
+ * @brief  Task duy nhất của chế độ chỉnh thời gian (add 1 lần trong main_app_init, chạy mỗi 10ms)
+ *         - Cờ chế độ != MODE_TUNING : đưa fsm về TUNING_INIT rồi bỏ qua
+ *         - Cờ chế độ == MODE_TUNING : xử lý nút Up/Down/Set + chớp đèn (software timer)
  */
-void fsm_tuning_init(void);
-
-/**
- * @brief  Vào chế độ chỉnh thời gian: add các task của chế độ vào scheduler (chỉ gọi 1 lần)
- */
-void fsm_tuning_start(void);
-
-/**
- * @brief  Thoát chế độ chỉnh thời gian: xóa các task của chế độ khỏi scheduler
- */
-void fsm_tuning_end(void);
+void fsm_tuning_run(void);
 
 /**
  * @brief  Lấy đèn đang được chỉnh (dùng cho task LCD)

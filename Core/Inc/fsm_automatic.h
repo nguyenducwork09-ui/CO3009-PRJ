@@ -14,19 +14,11 @@ typedef enum {
 } AutoState_t;
 
 /**
- * @brief  Khởi tạo máy trạng thái tự động (thiết lập trạng thái ban đầu và timer)
+ * @brief  Task duy nhất của chế độ tự động (add 1 lần trong main_app_init, chạy mỗi 10ms)
+ *         - Cờ chế độ != MODE_AUTO : đưa fsm về AUTO_INIT rồi bỏ qua
+ *         - Cờ chế độ == MODE_AUTO : chạy máy trạng thái (chuyển pha bằng software timer)
  */
-void fsm_automatic_init(void);
-
-/**
- * @brief  Vào chế độ tự động: add các task của chế độ vào scheduler (chỉ gọi 1 lần)
- */
-void fsm_automatic_start(void);
-
-/**
- * @brief  Thoát chế độ tự động: xóa các task của chế độ khỏi scheduler
- */
-void fsm_automatic_end(void);
+void fsm_automatic_run(void);
 
 /**
  * @brief  Lấy số giây đếm lùi còn lại của một tuyến (dùng cho task LCD)

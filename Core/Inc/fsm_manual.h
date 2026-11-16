@@ -13,19 +13,11 @@ typedef enum {
 } ManualState_t;
 
 /**
- * @brief  Khởi tạo máy trạng thái chế độ bằng tay
+ * @brief  Task duy nhất của chế độ bằng tay (add 1 lần trong main_app_init, chạy mỗi 10ms)
+ *         - Cờ chế độ != MODE_MANUAL : đưa fsm về MANUAL_INIT rồi bỏ qua
+ *         - Cờ chế độ == MODE_MANUAL : xử lý nút, đổi đèn
  */
-void fsm_manual_init(void);
-
-/**
- * @brief  Vào chế độ bằng tay: add các task của chế độ vào scheduler (chỉ gọi 1 lần)
- */
-void fsm_manual_start(void);
-
-/**
- * @brief  Thoát chế độ bằng tay: xóa các task của chế độ khỏi scheduler
- */
-void fsm_manual_end(void);
+void fsm_manual_run(void);
 
 /**
  * @brief  Lấy trạng thái hiện tại của chế độ bằng tay (dùng cho task LCD)

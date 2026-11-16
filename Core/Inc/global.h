@@ -36,7 +36,6 @@ typedef enum {
 #define DEFAULT_TIME_GREEN      3
 
 /* Global Shared Variables */
-extern SystemMode_t current_mode;
 extern uint16_t time_red;
 extern uint16_t time_amber;
 extern uint16_t time_green;

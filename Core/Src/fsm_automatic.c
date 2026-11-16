@@ -1,116 +1,107 @@
 // #include "fsm_automatic.h"
 #include "../Inc/fsm_automatic.h"
-#include "../Inc/scheduler.h"
+#include "../Inc/main_app.h"
+#include "../Inc/software_timer.h"
 #include "../Inc/traffic_light.h"
 
 /*
- * Chế độ tự động: 7 task
- *   - 6 task màu (Red/Green/Yellow_Control x 2 tuyến): mỗi task chỉ bật màu của mình
- *     và nạp lại bộ đếm lùi. Thời điểm chạy do Delay/Period quyết định.
- *   - 1 task Countdown: mỗi 1s giảm bộ đếm lùi của 2 tuyến.
- * Không ghi LCD: task LCD trong fsm_mode đọc bộ đếm qua fsm_automatic_get_countdown().
+ * Chế độ tự động: 1 task duy nhất fsm_automatic_run() (10ms, chạy suốt chương trình)
+ *   - Không phải lượt của mình (cờ != MODE_AUTO): về AUTO_INIT rồi thoát
+ *   - Đúng lượt: chạy máy trạng thái 4 pha
+ *       RED1_GREEN2 (time_green) -> RED1_AMBER2 (time_amber)
+ *    -> GREEN1_RED2 (time_green) -> AMBER1_RED2 (time_amber) -> lặp lại
+ *   - Thời gian pha dùng TIMER_AUTO_PHASE, nhịp đếm lùi 1s dùng TIMER_AUTO_SECOND
+ * Không ghi LCD: task LCD trong main_app đọc bộ đếm qua fsm_automatic_get_countdown().
  */
 
-/* ===== Quy đổi thời gian -> tick (1 tick = 10ms) ===== */
-#define TICK_MS         10
-#define SEC(x)          ((x) * 1000 / TICK_MS)
+#define SEC_TO_MS(x)    ((uint32_t)(x) * 1000U)
 
-/* ===== Bộ đếm lùi ===== */
-static uint16_t road1_counter = 0;
-static uint16_t road2_counter = 0;
+/* ===== Trạng thái + bộ đếm lùi ===== */
+static AutoState_t auto_state    = AUTO_INIT;
+static uint16_t    road1_counter = 0;
+static uint16_t    road2_counter = 0;
 
-/* ===== Task functions ===== */
-/* Road 1 */
-void Red_Control_1(void)
+/* Vào một pha mới: bật đèn, nạp bộ đếm (nếu tuyến đó đổi màu), chạy lại 2 timer */
+static void auto_enter(AutoState_t next)
 {
-    traffic_set(ROAD_1, LIGHT_RED);
-    road1_counter = time_red;
+    uint16_t phase_time = 0;
+
+    switch (next) {
+    case AUTO_RED1_GREEN2:
+        traffic_set(ROAD_1, LIGHT_RED);
+        traffic_set(ROAD_2, LIGHT_GREEN);
+        road1_counter = time_red;
+        road2_counter = time_green;
+        phase_time    = time_green;
+        break;
+    case AUTO_RED1_AMBER2:
+        traffic_set(ROAD_2, LIGHT_AMBER);       /* tuyến 1 vẫn đỏ, giữ bộ đếm */
+        road2_counter = time_amber;
+        phase_time    = time_amber;
+        break;
+    case AUTO_GREEN1_RED2:
+        traffic_set(ROAD_1, LIGHT_GREEN);
+        traffic_set(ROAD_2, LIGHT_RED);
+        road1_counter = time_green;
+        road2_counter = time_red;
+        phase_time    = time_green;
+        break;
+    case AUTO_AMBER1_RED2:
+        traffic_set(ROAD_1, LIGHT_AMBER);       /* tuyến 2 vẫn đỏ, giữ bộ đếm */
+        road1_counter = time_amber;
+        phase_time    = time_amber;
+        break;
+    case AUTO_INIT:
+    default:
+        break;
+    }
+
+    auto_state = next;
+    setTimer(TIMER_AUTO_PHASE,  SEC_TO_MS(phase_time));
+    setTimer(TIMER_AUTO_SECOND, SEC_TO_MS(1));
 }
-void Green_Control_1(void)
+
+/* ===== Task function ===== */
+void fsm_automatic_run(void)
 {
-    traffic_set(ROAD_1, LIGHT_GREEN);
-    road1_counter = time_green;
-}
-void Yellow_Control_1(void)
-{
-    traffic_set(ROAD_1, LIGHT_AMBER);
-    road1_counter = time_amber;
-}
+    /* Không phải lượt của mình: reset để lần vào sau khởi động lại từ đầu */
+    if (main_app_get_mode() != MODE_AUTO) {
+        auto_state = AUTO_INIT;
+        return;
+    }
 
-/* Road 2 */
-void Red_Control_2(void)
-{
-    traffic_set(ROAD_2, LIGHT_RED);
-    road2_counter = time_red;
-}
-void Green_Control_2(void)
-{
-    traffic_set(ROAD_2, LIGHT_GREEN);
-    road2_counter = time_green;
-}
-void Yellow_Control_2(void)
-{
-    traffic_set(ROAD_2, LIGHT_AMBER);
-    road2_counter = time_amber;
-}
+    /* Đếm lùi mỗi 1s (xử lý TRƯỚC chuyển pha: khi trùng tick thì đếm về 0 rồi pha mới nạp lại) */
+    if (auto_state != AUTO_INIT && isTimerExpired(TIMER_AUTO_SECOND)) {
+        if (road1_counter > 0) road1_counter--;
+        if (road2_counter > 0) road2_counter--;
+        setTimer(TIMER_AUTO_SECOND, SEC_TO_MS(1));
+    }
 
-/* Đếm lùi cả 2 tuyến */
-void Countdown(void)
-{
-    if (road1_counter > 0) road1_counter--;
-    if (road2_counter > 0) road2_counter--;
-}
+    switch (auto_state) {
+    case AUTO_INIT:
+        auto_enter(AUTO_RED1_GREEN2);
+        break;
 
-/* ===== sTask control (Delay/Period được tính trong fsm_automatic_start) ===== */
-/* Road 1: Đỏ -> Xanh -> Vàng */
-sTask task_Red_Control_1    = { .pTask = Red_Control_1 };
-sTask task_Green_Control_1  = { .pTask = Green_Control_1 };
-sTask task_Yellow_Control_1 = { .pTask = Yellow_Control_1 };
+    case AUTO_RED1_GREEN2:
+        if (isTimerExpired(TIMER_AUTO_PHASE)) auto_enter(AUTO_RED1_AMBER2);
+        break;
 
-/* Road 2: Xanh -> Vàng -> Đỏ */
-sTask task_Green_Control_2  = { .pTask = Green_Control_2 };
-sTask task_Yellow_Control_2 = { .pTask = Yellow_Control_2 };
-sTask task_Red_Control_2    = { .pTask = Red_Control_2 };
+    case AUTO_RED1_AMBER2:
+        if (isTimerExpired(TIMER_AUTO_PHASE)) auto_enter(AUTO_GREEN1_RED2);
+        break;
 
-sTask task_Countdown        = { .pTask = Countdown };
+    case AUTO_GREEN1_RED2:
+        if (isTimerExpired(TIMER_AUTO_PHASE)) auto_enter(AUTO_AMBER1_RED2);
+        break;
 
-static void add(sTask *t, uint32_t delay, uint32_t period)
-{
-    t->Delay  = delay;
-    t->Period = period;
-    t->TaskID = SCH_Add_Task(t->pTask, t->Delay, t->Period);
-}
+    case AUTO_AMBER1_RED2:
+        if (isTimerExpired(TIMER_AUTO_PHASE)) auto_enter(AUTO_RED1_GREEN2);
+        break;
 
-void fsm_automatic_start(void){
-    /* Tính Delay/Period theo time_* hiện tại (có thể đã bị đổi ở chế độ Tuning) */
-    uint32_t cycle = SEC(time_red + time_green + time_amber);
-
-    road1_counter = 0;
-    road2_counter = 0;
-
-    /* Countdown add TRƯỚC task màu: khi trùng tick, đếm về 0 rồi task màu mới nạp lại.
-     * Delay = 1s để giây đầu tiên hiển thị đủ giá trị. */
-    add(&task_Countdown,        SEC(1),                         SEC(1));
-
-    add(&task_Red_Control_1,    0,                              cycle);
-    add(&task_Green_Control_1,  SEC(time_red),                  cycle);
-    add(&task_Yellow_Control_1, SEC(time_red + time_green),     cycle);
-
-    add(&task_Green_Control_2,  0,                              cycle);
-    add(&task_Yellow_Control_2, SEC(time_green),                cycle);
-    add(&task_Red_Control_2,    SEC(time_green + time_amber),   cycle);
-}
-
-void fsm_automatic_end(void){
-    SCH_Delete_Task(task_Countdown.TaskID);
-
-    SCH_Delete_Task(task_Red_Control_1.TaskID);
-    SCH_Delete_Task(task_Green_Control_1.TaskID);
-    SCH_Delete_Task(task_Yellow_Control_1.TaskID);
-
-    SCH_Delete_Task(task_Green_Control_2.TaskID);
-    SCH_Delete_Task(task_Yellow_Control_2.TaskID);
-    SCH_Delete_Task(task_Red_Control_2.TaskID);
+    default:
+        auto_state = AUTO_INIT;
+        break;
+    }
 }
 
 uint16_t fsm_automatic_get_countdown(uint8_t road){
