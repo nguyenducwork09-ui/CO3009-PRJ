@@ -3,17 +3,18 @@
 #include "../Inc/scheduler.h"
 #include "../Inc/traffic_light.h"
 #include "../Inc/button.h"
-#include "../Inc/lcd.h"
-#include <stdio.h>
 
 /*
- * 3 task polling nút (Up / Down / Set): chạy mỗi 10ms.
- *   - Up/Down: tăng/giảm giá trị thời gian của đèn đang chỉnh.
- *   - Set    : lưu giá trị rồi chuyển sang đèn kế tiếp (RED -> AMBER -> GREEN -> RED).
- * 1 task hiển thị: chạy mỗi 500ms, chớp đèn đang chỉnh ở cả 2 tuyến + in giá trị lên LCD.
+ * Chế độ chỉnh thời gian: 2 task
+ *   - Tuning_Button_Handler (10ms): đọc cờ nút từ driver
+ *       BTN_1 (Up)  : tăng giá trị thời gian của đèn đang chỉnh
+ *       BTN_2 (Down): giảm giá trị
+ *       BTN_3 (Set) : lưu giá trị rồi chuyển sang đèn kế tiếp (RED -> AMBER -> GREEN -> RED)
+ *   - Tuning_Blink (500ms): chớp đèn đang chỉnh ở cả 2 tuyến
+ * Không ghi LCD: task LCD trong fsm_mode đọc qua fsm_tuning_get_state()/get_value().
  *
  * Ràng buộc để 2 tuyến đồng bộ ở chế độ tự động: time_red = time_green + time_amber
- *   - Lưu RED        -> tính lại time_green = time_red - time_amber
+ *   - Lưu RED         -> tính lại time_green = time_red - time_amber
  *   - Lưu AMBER/GREEN -> tính lại time_red  = time_green + time_amber
  */
 
@@ -50,67 +51,59 @@ static void tuning_load(void)
     }
 }
 
-/* ===== Task functions ===== */
-/* Nút Up: tăng giá trị, vượt max thì quay về min */
-void Button_Up_Polling(void)
+/* Lưu giá trị đang chỉnh + chuyển sang đèn kế tiếp */
+static void tuning_save_and_next(void)
 {
-    if (btn_up()) {
-        uint16_t min, max;
-        tuning_limits(&min, &max);
+    switch (tuning_state) {
+    case TUNING_RED:
+        time_red     = tuning_value;
+        time_green   = time_red - time_amber;
+        tuning_state = TUNING_AMBER;
+        break;
+    case TUNING_AMBER:
+        time_amber   = tuning_value;
+        time_red     = time_green + time_amber;
+        tuning_state = TUNING_GREEN;
+        break;
+    case TUNING_GREEN:
+        time_green   = tuning_value;
+        time_red     = time_green + time_amber;
+        tuning_state = TUNING_RED;
+        break;
+    default:
+        tuning_state = TUNING_RED;
+        break;
+    }
+    tuning_load();
+}
+
+/* ===== Task functions ===== */
+void Tuning_Button_Handler(void)
+{
+    uint16_t min, max;
+    tuning_limits(&min, &max);
+
+    if (isButtonPressed(BTN_1)) {           /* Up: vượt max thì quay về min */
         tuning_value = (tuning_value >= max) ? min : tuning_value + 1;
     }
-}
-
-/* Nút Down: giảm giá trị, nhỏ hơn min thì quay về max */
-void Button_Down_Polling(void)
-{
-    if (btn_down()) {
-        uint16_t min, max;
-        tuning_limits(&min, &max);
+    if (isButtonPressed(BTN_2)) {           /* Down: nhỏ hơn min thì quay về max */
         tuning_value = (tuning_value <= min) ? max : tuning_value - 1;
     }
-}
-
-/* Nút Set: lưu giá trị, chuyển sang đèn kế tiếp */
-void Button_Set_Polling(void)
-{
-    if (btn_set()) {
-        switch (tuning_state) {
-        case TUNING_RED:
-            time_red     = tuning_value;
-            time_green   = time_red - time_amber;
-            tuning_state = TUNING_AMBER;
-            break;
-        case TUNING_AMBER:
-            time_amber   = tuning_value;
-            time_red     = time_green + time_amber;
-            tuning_state = TUNING_GREEN;
-            break;
-        case TUNING_GREEN:
-            time_green   = tuning_value;
-            time_red     = time_green + time_amber;
-            tuning_state = TUNING_RED;
-            break;
-        default:
-            tuning_state = TUNING_RED;
-            break;
-        }
-        tuning_load();
+    if (isButtonPressed(BTN_3)) {           /* Set */
+        tuning_save_and_next();
     }
 }
 
-/* Hiển thị: chớp đèn đang chỉnh (500ms sáng / 500ms tắt) + in giá trị lên LCD */
-void Tuning_Display(void)
+/* Chớp đèn đang chỉnh: 500ms sáng / 500ms tắt */
+void Tuning_Blink(void)
 {
     LightColor_t color;
-    const char  *name;
-    char         buf[17];
 
     switch (tuning_state) {
-    case TUNING_RED:   color = LIGHT_RED;   name = "RED  "; break;
-    case TUNING_AMBER: color = LIGHT_AMBER; name = "AMBER"; break;
-    case TUNING_GREEN: color = LIGHT_GREEN; name = "GREEN"; break;
-    default:           color = LIGHT_OFF;   name = "-----"; break;
+    case TUNING_RED:   color = LIGHT_RED;   break;
+    case TUNING_AMBER: color = LIGHT_AMBER; break;
+    case TUNING_GREEN: color = LIGHT_GREEN; break;
+    default:           color = LIGHT_OFF;   break;
     }
 
     blink_on = !blink_on;
@@ -120,40 +113,35 @@ void Tuning_Display(void)
     } else {
         traffic_turn_off_all();
     }
-
-    snprintf(buf, sizeof(buf), "TUNING %s    ", name);
-    lcd_set_cursor(0, 0);
-    lcd_send_string(buf);
-
-    snprintf(buf, sizeof(buf), "Value: %2u s     ", tuning_value);
-    lcd_set_cursor(1, 0);
-    lcd_send_string(buf);
 }
 
 /* ===== sTask control ===== */
-/*                                 pTask                Delay  Period    */
-sTask task_Button_Up_Polling   = { Button_Up_Polling,   0,     MS(10)  };
-sTask task_Button_Down_Polling = { Button_Down_Polling, 0,     MS(10)  };
-sTask task_Button_Set_Polling  = { Button_Set_Polling,  0,     MS(10)  };
-sTask task_Tuning_Display      = { Tuning_Display,      0,     MS(500) };
+/*                                   pTask                  Delay  Period   */
+sTask task_Tuning_Button_Handler = { Tuning_Button_Handler, 0,     MS(10)  };
+sTask task_Tuning_Blink          = { Tuning_Blink,          0,     MS(500) };
 
 void fsm_tuning_start(void){
     tuning_state = TUNING_RED;
     tuning_load();
     blink_on = 0;
 
-    /* Add 3 task polling nút trước */
-    task_Button_Up_Polling.TaskID   = SCH_Add_Task(task_Button_Up_Polling.pTask,   task_Button_Up_Polling.Delay,   task_Button_Up_Polling.Period);
-    task_Button_Down_Polling.TaskID = SCH_Add_Task(task_Button_Down_Polling.pTask, task_Button_Down_Polling.Delay, task_Button_Down_Polling.Period);
-    task_Button_Set_Polling.TaskID  = SCH_Add_Task(task_Button_Set_Polling.pTask,  task_Button_Set_Polling.Delay,  task_Button_Set_Polling.Period);
-
-    /* Add task hiển thị sau cùng */
-    task_Tuning_Display.TaskID      = SCH_Add_Task(task_Tuning_Display.pTask,      task_Tuning_Display.Delay,      task_Tuning_Display.Period);
+    task_Tuning_Button_Handler.TaskID = SCH_Add_Task(task_Tuning_Button_Handler.pTask,
+                                                     task_Tuning_Button_Handler.Delay,
+                                                     task_Tuning_Button_Handler.Period);
+    task_Tuning_Blink.TaskID          = SCH_Add_Task(task_Tuning_Blink.pTask,
+                                                     task_Tuning_Blink.Delay,
+                                                     task_Tuning_Blink.Period);
 }
 
 void fsm_tuning_end(void){
-    SCH_Delete_Task(task_Button_Up_Polling.TaskID);
-    SCH_Delete_Task(task_Button_Down_Polling.TaskID);
-    SCH_Delete_Task(task_Button_Set_Polling.TaskID);
-    SCH_Delete_Task(task_Tuning_Display.TaskID);
+    SCH_Delete_Task(task_Tuning_Button_Handler.TaskID);
+    SCH_Delete_Task(task_Tuning_Blink.TaskID);
+}
+
+TuningState_t fsm_tuning_get_state(void){
+    return tuning_state;
+}
+
+uint16_t fsm_tuning_get_value(void){
+    return tuning_value;
 }

@@ -27,4 +27,16 @@ void fsm_tuning_start(void);
  */
 void fsm_tuning_end(void);
 
+/**
+ * @brief  Lấy đèn đang được chỉnh (dùng cho task LCD)
+ * @retval TUNING_RED, TUNING_AMBER hoặc TUNING_GREEN
+ */
+TuningState_t fsm_tuning_get_state(void);
+
+/**
+ * @brief  Lấy giá trị thời gian đang chỉnh (chưa lưu) (dùng cho task LCD)
+ * @retval Số giây
+ */
+uint16_t fsm_tuning_get_value(void);
+
 #endif /* INC_FSM_TUNING_H_ */

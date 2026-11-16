@@ -5,9 +5,11 @@
 #include "../Inc/button.h"
 
 /*
- * 3 task polling nút (Đỏ / Vàng / Xanh): chạy mỗi 10ms, đổi trạng thái manual khi nút được nhấn.
- *   (Gán chân, đọc GPIO, chống dội do driver button.h / button.c đảm nhiệm)
- * 1 task hiển thị đèn: xuất trạng thái manual ra 2 cụm đèn.
+ * Chế độ bằng tay: 1 task xử lý nút (đọc cờ từ driver, chạy mỗi 10ms)
+ *   BTN_1 (Đỏ) : Đỏ tuyến 1 - Xanh tuyến 2
+ *   BTN_2 (Vàng): Vàng cả 2 tuyến
+ *   BTN_3 (Xanh): Xanh tuyến 1 - Đỏ tuyến 2
+ * Việc đọc nút + chống dội do task button_reading (fsm_mode) lo.
  */
 
 /* ===== Quy đổi thời gian -> tick (1 tick = 10ms) ===== */
@@ -17,33 +19,8 @@
 /* ===== Trạng thái manual ===== */
 static ManualState_t manual_state = MANUAL_RED1_GREEN2;
 
-/* ===== Task functions ===== */
-/* Nút Đỏ: Đỏ tuyến 1 - Xanh tuyến 2 */
-void Button_Red_Polling(void)
-{
-    if (btn_red()) {
-        manual_state = MANUAL_RED1_GREEN2;
-    }
-}
-
-/* Nút Vàng: Vàng cả 2 tuyến */
-void Button_Yellow_Polling(void)
-{
-    if (btn_yellow()) {
-        manual_state = MANUAL_AMBER1_AMBER2;
-    }
-}
-
-/* Nút Xanh: Xanh tuyến 1 - Đỏ tuyến 2 */
-void Button_Green_Polling(void)
-{
-    if (btn_green()) {
-        manual_state = MANUAL_GREEN1_RED2;
-    }
-}
-
-/* Hiển thị đèn theo trạng thái manual */
-void Manual_Light_Display(void)
+/* Xuất trạng thái ra 2 cụm đèn */
+static void manual_apply(void)
 {
     switch (manual_state) {
     case MANUAL_RED1_GREEN2:
@@ -65,28 +42,40 @@ void Manual_Light_Display(void)
     }
 }
 
+/* ===== Task function ===== */
+void Manual_Button_Handler(void)
+{
+    if (isButtonPressed(BTN_1)) {
+        manual_state = MANUAL_RED1_GREEN2;
+        manual_apply();
+    }
+    if (isButtonPressed(BTN_2)) {
+        manual_state = MANUAL_AMBER1_AMBER2;
+        manual_apply();
+    }
+    if (isButtonPressed(BTN_3)) {
+        manual_state = MANUAL_GREEN1_RED2;
+        manual_apply();
+    }
+}
+
 /* ===== sTask control ===== */
-/*                                   pTask                  Delay  Period    */
-sTask task_Button_Red_Polling    = { Button_Red_Polling,    0,     MS(10)  };
-sTask task_Button_Yellow_Polling = { Button_Yellow_Polling, 0,     MS(10)  };
-sTask task_Button_Green_Polling  = { Button_Green_Polling,  0,     MS(10)  };
-sTask task_Manual_Light_Display  = { Manual_Light_Display,  0,     MS(100) };
+/*                                   pTask                  Delay  Period  */
+sTask task_Manual_Button_Handler = { Manual_Button_Handler, 0,     MS(10) };
 
 void fsm_manual_start(void){
     manual_state = MANUAL_RED1_GREEN2;
+    manual_apply();
 
-    /* Add 3 task polling nút trước */
-    task_Button_Red_Polling.TaskID    = SCH_Add_Task(task_Button_Red_Polling.pTask,    task_Button_Red_Polling.Delay,    task_Button_Red_Polling.Period);
-    task_Button_Yellow_Polling.TaskID = SCH_Add_Task(task_Button_Yellow_Polling.pTask, task_Button_Yellow_Polling.Delay, task_Button_Yellow_Polling.Period);
-    task_Button_Green_Polling.TaskID  = SCH_Add_Task(task_Button_Green_Polling.pTask,  task_Button_Green_Polling.Delay,  task_Button_Green_Polling.Period);
-
-    /* Add task hiển thị đèn sau cùng */
-    task_Manual_Light_Display.TaskID  = SCH_Add_Task(task_Manual_Light_Display.pTask,  task_Manual_Light_Display.Delay,  task_Manual_Light_Display.Period);
+    task_Manual_Button_Handler.TaskID = SCH_Add_Task(task_Manual_Button_Handler.pTask,
+                                                     task_Manual_Button_Handler.Delay,
+                                                     task_Manual_Button_Handler.Period);
 }
 
 void fsm_manual_end(void){
-    SCH_Delete_Task(task_Button_Red_Polling.TaskID);
-    SCH_Delete_Task(task_Button_Yellow_Polling.TaskID);
-    SCH_Delete_Task(task_Button_Green_Polling.TaskID);
-    SCH_Delete_Task(task_Manual_Light_Display.TaskID);
+    SCH_Delete_Task(task_Manual_Button_Handler.TaskID);
+}
+
+ManualState_t fsm_manual_get_state(void){
+    return manual_state;
 }
