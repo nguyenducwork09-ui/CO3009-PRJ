@@ -7,6 +7,7 @@
 #include "../Inc/fsm_automatic.h"
 #include "../Inc/fsm_manual.h"
 #include "../Inc/fsm_tuning.h"
+#include "../Inc/dht20.h"
 #include <stdio.h>
 
 /*
@@ -115,13 +116,23 @@ void LCD_Display(void)
     lcd_send_string(pad1);
 }
 
+void Sensor_Reading(void)
+{
+    float temp = 0.0f, hum = 0.0f;
+    if (dht20_read(&temp, &hum)) {
+        current_temperature = temp;
+        current_humidity    = hum;
+    }
+}
+
 /* ===== sTask control ===== */
-sTask task_Button_Reading    = { .pTask = Button_Reading   , .Delay = 0, .Period = MS(10) };
-sTask task_Button_Logic      = { .pTask = Button_Logic     , .Delay = 0, .Period = MS(10) };
-sTask task_FSM_Automatic     = { .pTask = fsm_automatic_run, .Delay = 0, .Period = MS(10) };
-sTask task_FSM_Manual        = { .pTask = fsm_manual_run   , .Delay = 0, .Period = MS(10) };
-sTask task_FSM_Tuning        = { .pTask = fsm_tuning_run   , .Delay = 0, .Period = MS(10) };
-sTask task_LCD_Display       = { .pTask = LCD_Display      , .Delay = 0, .Period = MS(250) };
+sTask task_Button_Reading    = { .pTask = Button_Reading   , .Delay = 0,       .Period = MS(10)   };
+sTask task_Button_Logic      = { .pTask = Button_Logic     , .Delay = 0,       .Period = MS(10)   };
+sTask task_FSM_Automatic     = { .pTask = fsm_automatic_run, .Delay = 0,       .Period = MS(10)   };
+sTask task_FSM_Manual        = { .pTask = fsm_manual_run   , .Delay = 0,       .Period = MS(10)   };
+sTask task_FSM_Tuning        = { .pTask = fsm_tuning_run   , .Delay = 0,       .Period = MS(10)   };
+sTask task_LCD_Display       = { .pTask = LCD_Display      , .Delay = 0,       .Period = MS(250)  };
+sTask task_Sensor_Reading    = { .pTask = Sensor_Reading   , .Delay = MS(100), .Period = MS(2000) };
 
 static void add(sTask *t)
 {
@@ -134,6 +145,7 @@ void main_app_init(void)
     button_init();
     traffic_init();
     lcd_init();
+    dht20_init();
 
     mode_flag     = MODE_AUTO;
     traffic_phase = PHASE_OFF;
@@ -144,4 +156,5 @@ void main_app_init(void)
     add(&task_FSM_Manual);
     add(&task_FSM_Tuning);
     add(&task_LCD_Display);
+    add(&task_Sensor_Reading);
 }

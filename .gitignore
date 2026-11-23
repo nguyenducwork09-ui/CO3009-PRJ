@@ -8,6 +8,7 @@ Release/
 *.su
 *.bin
 *.hex
-
+*.pdf
 # IDE metadata
 .metadata/
+.settings/
