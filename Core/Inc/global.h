@@ -10,6 +10,18 @@ typedef enum {
     MODE_TUNING
 } SystemMode_t;
 
+#define NUM_MODES               3
+
+/* Pha đèn hiện tại của 2 tuyến (tổ hợp màu tuyến 1 - tuyến 2) */
+typedef enum {
+    PHASE_OFF = 0,              /* tắt / không ở pha giao thông nào (vd: đang tuning) */
+    PHASE_RED1_GREEN2,
+    PHASE_RED1_AMBER2,
+    PHASE_GREEN1_RED2,
+    PHASE_AMBER1_RED2,
+    PHASE_AMBER1_AMBER2
+} TrafficPhase_t;
+
 /* Traffic Light Colors */
 typedef enum {
     LIGHT_OFF = 0,
@@ -36,7 +48,9 @@ typedef enum {
 #define DEFAULT_TIME_GREEN      3
 
 /* Global Shared Variables */
-extern SystemMode_t current_mode;
+extern SystemMode_t   mode_flag;      /* chế độ hiện tại: chỉ Button_Logic ghi, các fsm đọc */
+extern TrafficPhase_t traffic_phase;  /* pha đèn hiện tại: fsm đang chạy ghi mỗi khi đổi đèn */
+
 extern uint16_t time_red;
 extern uint16_t time_amber;
 extern uint16_t time_green;
